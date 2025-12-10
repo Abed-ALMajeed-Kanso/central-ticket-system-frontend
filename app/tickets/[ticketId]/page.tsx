@@ -16,7 +16,9 @@ export default function TicketDetails() {
   const params = useParams();
   const role = user?.role || "ROLE_USER";
 
-  // Hooks are called unconditionally
+  const ticketIdRaw = Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId;
+  const ticketId = Number(ticketIdRaw);
+
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -27,92 +29,72 @@ export default function TicketDetails() {
   const stompClient = useRef<Client | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Get ticketId safely
-  const ticketIdRaw = Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId;
-  const ticketId = Number(ticketIdRaw);
+  if (isNaN(ticketId)) return <p>Invalid Ticket ID</p>;
 
-  if (isNaN(ticketId)) {
-    // Conditional return is now AFTER hooks
-    return <p>Invalid Ticket ID</p>;
-  }
-
-  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Load ticket
   useEffect(() => {
     getTicketById(ticketId).then(setTicket);
   }, [ticketId]);
 
-useEffect(() => {
-  if (!ticket) return;
+  useEffect(() => {
+    if (!ticket) return;
+    updateTicketViewStatus(ticket.id).catch(console.error);
+  }, [ticket, messages.length]);
 
-  updateTicketViewStatus(ticket.id).catch(console.error);
-}, [ticketId, messages.length]);
+  useEffect(() => {
+    if (!ticket) return;
+    setLoading(true);
+    getTicketMessages(ticket.id)
+      .then(setMessages)
+      .finally(() => setLoading(false));
+  }, [ticket]);
 
-useEffect(() => {
-  if (!ticket || !role) return;
-  setLoading(true);
-  getTicketMessages(ticket.id)
-    .then((msgs) => {
-      setMessages(msgs);
-    })
-    .finally(() => setLoading(false));
-}, [ticket, role]);
-  
-useEffect(() => {
-  if (!ticketId) return;
-
-  const client = createStompClient([
-    {
-      topic: `/topic/tickets/${ticketId}`,
-      callback: (msg) => {
-        const newMsg: Message = JSON.parse(msg.body);
-        setMessages((prev) =>
-          prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]
-        );
+  useEffect(() => {
+    if (!ticketId) return;
+    const client = createStompClient([
+      {
+        topic: `/topic/tickets/${ticketId}`,
+        callback: (msg) => {
+          const newMsg: Message = JSON.parse(msg.body);
+          setMessages((prev) =>
+            prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]
+          );
+        },
       },
-    },
-    {
-      topic: `/topic/tickets/view-status/${ticketId}`,
-      callback: (msg) => {
-        const status = JSON.parse(msg.body);
-        console.log("View status:", status);
+      {
+        topic: `/topic/tickets/view-status/${ticketId}`,
+        callback: (msg) => {
+          const status = JSON.parse(msg.body);
+          console.log("View status:", status);
+        },
       },
-    },
-  ]);
+    ]);
 
-  stompClient.current = client;
-
-  return () => {
-    client.deactivate();
-  };
-}, [ticketId]);
-
+    stompClient.current = client;
+    return () => client.deactivate();
+  }, [ticketId]);
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setAttachments(Array.from(e.target.files));
   };
 
-const handleSend = async () => {
-  if (!ticket || (!newMessage.trim() && attachments.length === 0)) return;
+  const handleSend = async () => {
+    if (!ticket || (!newMessage.trim() && attachments.length === 0)) return;
 
-  try {
-
-    await sendTicketMessage(ticket.id, newMessage, attachments, shareToSlack.toString());
-
-    await updateTicketViewStatus(ticket.id);
-
-    setNewMessage("");
-    setAttachments([]);
-    setShareToSlack(false);
-  } catch (error) {
-    console.error("Failed to send message:", error);
-    alert("Failed to send message.");
-  }
-};
+    try {
+      await sendTicketMessage(ticket.id, newMessage, attachments, shareToSlack.toString());
+      await updateTicketViewStatus(ticket.id);
+      setNewMessage("");
+      setAttachments([]);
+      setShareToSlack(false);
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      alert("Failed to send message.");
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -123,7 +105,6 @@ const handleSend = async () => {
 
   if (!ticket) return <p>Loading ticket...</p>;
 
-  // Group messages by date
   const groupedMessages: Record<string, Message[]> = {};
   messages.forEach((msg) => {
     const dateKey = formatDate(new Date(msg.createdAt || Date.now()));
@@ -133,13 +114,10 @@ const handleSend = async () => {
 
   return (
     <div className="min-h-screen flex flex-col items-center bg-gradient-to-br from-cyan-300 to-sky-600 p-8 pt-24">
-  <div className="w-full max-w-4xl bg-white shadow-md rounded-xl p-8 flex flex-col gap-6 max-h-[80vh] overflow-y-auto">
-
-      
+      <div className="w-full max-w-4xl bg-white shadow-md rounded-xl p-8 flex flex-col gap-6 max-h-[80vh] overflow-y-auto">
         <h1 className="text-2xl font-bold mb-4 text-center relative after:block after:w-16 after:h-1 after:bg-blue-600 after:mx-auto after:mt-2">
           {ticket.header}
         </h1>
-
 
         {loading && <p>Loading messages...</p>}
 
@@ -187,10 +165,10 @@ const handleSend = async () => {
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
-          <form 
+          <form
             onSubmit={(e) => {
-              e.preventDefault(); 
-              handleSend();      
+              e.preventDefault();
+              handleSend();
             }}
             className="sticky bottom-0 bg-white flex flex-col gap-3 p-2"
           >
@@ -200,6 +178,7 @@ const handleSend = async () => {
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Type a message..."
               className="border rounded px-3 py-2"
+              onKeyDown={handleKeyDown}
             />
 
             <input
@@ -218,20 +197,19 @@ const handleSend = async () => {
             )}
 
             {role === "ROLE_ADMIN" && (
-            <label className="flex items-center gap-2 text-sm text-gray-700 mt-2">
-              <input
-                type="checkbox"
-                checked={shareToSlack}
-                onChange={(e) => setShareToSlack(e.target.checked)}
-                className="accent-blue-600 w-4 h-4"
-              />
-              <span>Share this message to Slack</span>
-            </label>
-          )}
-
+              <label className="flex items-center gap-2 text-sm text-gray-700 mt-2">
+                <input
+                  type="checkbox"
+                  checked={shareToSlack}
+                  onChange={(e) => setShareToSlack(e.target.checked)}
+                  className="accent-blue-600 w-4 h-4"
+                />
+                <span>Share this message to Slack</span>
+              </label>
+            )}
 
             <button
-              type="submit" 
+              type="submit"
               className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
             >
               Send
