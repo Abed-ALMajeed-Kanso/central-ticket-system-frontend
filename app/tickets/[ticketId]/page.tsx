@@ -16,10 +16,7 @@ export default function TicketDetails() {
   const params = useParams();
   const role = user?.role || "ROLE_USER";
 
-  const ticketIdRaw = Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId;
-  const ticketId = Number(ticketIdRaw);
-  if (isNaN(ticketId)) return <p>Invalid Ticket ID</p>;
-
+  // Hooks are called unconditionally
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -27,9 +24,17 @@ export default function TicketDetails() {
   const [loading, setLoading] = useState(false);
   const [shareToSlack, setShareToSlack] = useState(false);
 
-
   const stompClient = useRef<Client | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Get ticketId safely
+  const ticketIdRaw = Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId;
+  const ticketId = Number(ticketIdRaw);
+
+  if (isNaN(ticketId)) {
+    // Conditional return is now AFTER hooks
+    return <p>Invalid Ticket ID</p>;
+  }
 
   // Scroll to bottom when messages change
   useEffect(() => {
