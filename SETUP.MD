@@ -30,3 +30,5 @@ npm run dev
 
 To deploy, use the same environment variables as defined in .env.example
 
+for deployment setup, check DEPLOYMENT_SETUP.MD in the backend repository
+
